@@ -1,0 +1,56 @@
+pipeline {
+    agent any
+
+    environment {
+        REPO_URL = "https://github.com/divyaanshu0/hello-python.git"
+        BRANCH = "main"
+        IMAGE_NAME = "PythonCICD"
+        DOCKER_HUB_USER = "your-dockerhub-username"
+        TEST_CONTAINER_NAME = "PythonCICD_test"
+        CONTAINER_NAME = "PythonCICD_app"
+        TEST_PORT = "5001"
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                git branch: "${BRANCH}", url: "${REPO_URL}"
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh "docker build -t ${IMAGE_NAME}:latest ."
+            }
+        }
+
+        stage('Test Container') {
+            steps {
+                script {
+                    try {
+                        sh "docker stop ${TEST_CONTAINER_NAME} || true"
+                        sh "docker rm ${TEST_CONTAINER_NAME} || true"
+                        sh "docker run -d --rm -p ${TEST_PORT}:5000 --name ${TEST_CONTAINER_NAME} ${IMAGE_NAME}:latest"
+                        sleep 5
+                        def result = sh(script: "curl -f http://localhost:${TEST_PORT}", returnStatus: true)
+                        if (result != 0) {
+                            error("Test container failed!")
+                        }
+                    } finally {
+                        sh "docker stop ${TEST_CONTAINER_NAME} || true"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Container') {
+            steps {
+                sh """
+                docker stop ${CONTAINER_NAME} || true
+                docker rm ${CONTAINER_NAME} || true
+                docker run -d -p 5001:5001 --name ${CONTAINER_NAME} ${IMAGE_NAME}:latest
+                """
+            }
+        }
+    }
+}
