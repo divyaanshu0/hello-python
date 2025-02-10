@@ -7,7 +7,7 @@ pipeline {
         IMAGE_NAME = "hello-world-app"
         DOCKER_HUB_USER = "your-dockerhub-username"
         TEST_CONTAINER_NAME = "flask_test"
-        PROD_CONTAINER_NAME = "flask_app"
+        PROD_CONTAINER_NAME = "FlaskCICD_app"
         TEST_PORT = "5002"
     }
 
