@@ -1,0 +1,97 @@
+pipeline {
+    agent any
+
+    environment {
+        REPO_URL = "https://github.com/divyaanshu0/hello-python.git"
+        BRANCH = "main"
+        IMAGE_NAME = "pythoncicd"
+        TEST_CONTAINER_NAME = "pythoncicd_test"
+        PROD_CONTAINER_NAME = "pythoncicd_prod"
+        TEST_PORT = "5002"
+        PROD_PORT = "5001"
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                git branch: "${BRANCH}", url: "${REPO_URL}"
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh "export DOCKER_BUILDKIT=1"
+                    sh "docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} ."
+                }
+            }
+        }
+
+        stage('Deploy Test Container') {
+            steps {
+                script {
+                    try {
+                        echo "🔄 Stopping and removing any existing test container..."
+                        sh "docker ps -q --filter 'name=${TEST_CONTAINER_NAME}' | xargs -r docker rm -f"
+
+                        echo "🚀 Running test container on port ${TEST_PORT}..."
+                        sh "docker run -d -p ${TEST_PORT}:5000 --name ${TEST_CONTAINER_NAME} ${IMAGE_NAME}:${BUILD_NUMBER}"
+                        sleep 5  
+
+                        // Get the Jenkins server's IP for accessibility
+                        def serverIP = sh(script: "hostname -I | awk '{print $1}'", returnStdout: true).trim()
+
+                        echo "✅ Test container is running at: http://${serverIP}:${TEST_PORT}"
+                        echo "👉 Open this URL in your browser and verify before approving deployment."
+                    } catch (Exception e) {
+                        error("❌ Test container deployment failed! Check logs.")
+                    }
+                }
+            }
+        }
+
+        stage('Approval for Production Deployment') {
+            steps {
+                input message: "Do you approve deployment to production?", ok: "Deploy"
+            }
+        }
+
+        stage('Free Up Production Port if Needed') {
+            steps {
+                script {
+                    echo "🔍 Checking if port ${PROD_PORT} is in use..."
+                    def portCheck = sh(script: "sudo netstat -tulnp | grep ':${PROD_PORT} ' || echo 'free'", returnStdout: true).trim()
+
+                    if (!portCheck.contains("free")) {
+                        echo "⚠️ Port ${PROD_PORT} is in use. Stopping process..."
+                        sh "sudo fuser -k ${PROD_PORT}/tcp || true"
+                    } else {
+                        echo "✅ Port ${PROD_PORT} is free for deployment."
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Production Container') {
+            steps {
+                script {
+                    echo "🔄 Stopping and removing any existing production container..."
+                    sh "docker ps -q --filter 'name=${PROD_CONTAINER_NAME}' | xargs -r docker rm -f"
+
+                    echo "🚀 Running new production container on port ${PROD_PORT}..."
+                    sh "docker run -d -p ${PROD_PORT}:5000 --name ${PROD_CONTAINER_NAME} ${IMAGE_NAME}:${BUILD_NUMBER}"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            def serverIP = sh(script: "hostname -I | awk '{print $1}'", returnStdout: true).trim()
+            echo "✅ Production deployment complete at: http://${serverIP}:${PROD_PORT}"
+        }
+        failure {
+            echo "❌ Deployment failed! Check logs for details."
+        }
+    }
+}
