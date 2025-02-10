@@ -7,7 +7,7 @@ pipeline {
         IMAGE_NAME = "pythoncicd"  // Fixed: Lowercase name
         TEST_CONTAINER_NAME = "pythoncicd_test"
         CONTAINER_NAME = "pythoncicd_app"
-        TEST_PORT = "5001"
+        TEST_PORT = "5002"
     }
 
     stages {
