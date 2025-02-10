@@ -4,10 +4,11 @@ pipeline {
     environment {
         REPO_URL = "https://github.com/divyaanshu0/hello-python.git"
         BRANCH = "main"
-        IMAGE_NAME = "pythoncicd"  // Fixed: Lowercase name
+        IMAGE_NAME = "pythoncicd"
         TEST_CONTAINER_NAME = "pythoncicd_test"
         CONTAINER_NAME = "pythoncicd_app"
         TEST_PORT = "5002"
+        PROD_PORT = "5001"
     }
 
     stages {
@@ -20,9 +21,9 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Enable BuildKit to remove the warning
+                    // Enable BuildKit for better performance
                     sh "export DOCKER_BUILDKIT=1"
-                    sh "docker build -t ${IMAGE_NAME}:latest ."
+                    sh "sudo docker build -t ${IMAGE_NAME}:latest ."
                 }
             }
         }
@@ -31,12 +32,12 @@ pipeline {
             steps {
                 script {
                     try {
-                        // Stop and remove previous test container if exists
-                        sh "docker stop ${TEST_CONTAINER_NAME} || true"
-                        sh "docker rm ${TEST_CONTAINER_NAME} || true"
+                        // Stop and remove previous test container
+                        sh "sudo docker stop ${TEST_CONTAINER_NAME} || true"
+                        sh "sudo docker rm ${TEST_CONTAINER_NAME} || true"
 
                         // Run test container on test port
-                        sh "docker run -d --rm -p ${TEST_PORT}:5001 --name ${TEST_CONTAINER_NAME} ${IMAGE_NAME}:latest"
+                        sh "sudo docker run -d --rm -p ${TEST_PORT}:5001 --name ${TEST_CONTAINER_NAME} ${IMAGE_NAME}:latest"
                         sleep 5  // Wait for container startup
 
                         // Check if the application is responding
@@ -45,8 +46,25 @@ pipeline {
                             error("Test container failed!")
                         }
                     } finally {
-                        sh "docker stop ${TEST_CONTAINER_NAME} || true"
+                        sh "sudo docker stop ${TEST_CONTAINER_NAME} || true"
                     }
+                }
+            }
+        }
+
+        stage('Check and Stop Previous Container') {
+            steps {
+                script {
+                    // Check if the port is in use and kill the process
+                    def portCheck = sh(script: "sudo lsof -t -i:${PROD_PORT} || echo 'free'", returnStdout: true).trim()
+                    if (portCheck != "free" && portCheck) {
+                        echo "⚠️ Port ${PROD_PORT} is in use. Stopping process ${portCheck}..."
+                        sh "sudo kill -9 ${portCheck} || true"
+                    }
+
+                    // Stop and remove the existing container
+                    sh "sudo docker stop ${CONTAINER_NAME} || true"
+                    sh "sudo docker rm ${CONTAINER_NAME} || true"
                 }
             }
         }
@@ -54,19 +72,9 @@ pipeline {
         stage('Deploy Container') {
             steps {
                 script {
-                    // Check if port 5001 is available before running
-                    def portCheck = sh(script: "netstat -tulnp | grep ':5001 ' || echo 'free'", returnStdout: true).trim()
-                    if (!portCheck.contains("free")) {
-                        error("Port 5001 is already in use! Change the port or stop the process using it.")
-                    }
-
                     sh """
-                    echo "Stopping and removing any existing container..."
-                    docker stop ${CONTAINER_NAME} || true
-                    docker rm ${CONTAINER_NAME} || true
-
-                    echo "Running new container..."
-                    docker run -d -p 5001:5001 --name ${CONTAINER_NAME} ${IMAGE_NAME}:latest
+                    echo "🚀 Running new container..."
+                    sudo docker run -d -p ${PROD_PORT}:5001 --name ${CONTAINER_NAME} ${IMAGE_NAME}:latest
                     """
                 }
             }
@@ -75,7 +83,7 @@ pipeline {
 
     post {
         success {
-            echo "✅ Application successfully deployed at: http://localhost:5001"
+            echo "✅ Application successfully deployed at: http://localhost:${PROD_PORT}"
         }
         failure {
             echo "❌ Build or deployment failed! Check logs for details."
