@@ -38,8 +38,8 @@ pipeline {
                         sh "docker run -d -p ${TEST_PORT}:5000 --name ${TEST_CONTAINER_NAME} ${IMAGE_NAME}:${BUILD_NUMBER}"
                         sleep 5  
 
-                        // Get the Jenkins server's IP for accessibility
-                        def serverIP = sh(script: "hostname -I | awk '{print $1}'", returnStdout: true).trim()
+                        // ✅ Fixed escaping of `$1`
+                        def serverIP = sh(script: "hostname -I | awk '{print \\$1}'", returnStdout: true).trim()
 
                         echo "✅ Test container is running at: http://${serverIP}:${TEST_PORT}"
                         echo "👉 Open this URL in your browser and verify before approving deployment."
@@ -87,7 +87,7 @@ pipeline {
 
     post {
         success {
-            def serverIP = sh(script: "hostname -I | awk '{print $1}'", returnStdout: true).trim()
+            def serverIP = sh(script: "hostname -I | awk '{print \\$1}'", returnStdout: true).trim()
             echo "✅ Production deployment complete at: http://${serverIP}:${PROD_PORT}"
         }
         failure {
