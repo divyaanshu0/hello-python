@@ -4,11 +4,11 @@ pipeline {
     environment {
         REPO_URL = "https://github.com/divyaanshu0/hello-python.git"
         BRANCH = "main"
-        IMAGE_NAME = "pythoncicd"
-        TEST_CONTAINER_NAME = "pythoncicd_test"
-        CONTAINER_NAME = "pythoncicd_app"
+        IMAGE_NAME = "hello-world-app"
+        DOCKER_HUB_USER = "your-dockerhub-username"
+        TEST_CONTAINER_NAME = "flask_test"
+        PROD_CONTAINER_NAME = "flask_app"
         TEST_PORT = "5002"
-        PROD_PORT = "5001"
     }
 
     stages {
@@ -20,11 +20,7 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                script {
-                    // Enable BuildKit for better performance
-                    sh "export DOCKER_BUILDKIT=1"
-                    sh "sudo docker build -t ${IMAGE_NAME}:latest ."
-                }
+                sh "docker build -t ${IMAGE_NAME}:latest ."
             }
         }
 
@@ -32,61 +28,29 @@ pipeline {
             steps {
                 script {
                     try {
-                        // Stop and remove previous test container
-                        sh "sudo docker stop ${TEST_CONTAINER_NAME} || true"
-                        sh "sudo docker rm ${TEST_CONTAINER_NAME} || true"
-
-                        // Run test container on test port
-                        sh "sudo docker run -d --rm -p ${TEST_PORT}:5001 --name ${TEST_CONTAINER_NAME} ${IMAGE_NAME}:latest"
-                        sleep 5  // Wait for container startup
-
-                        // Check if the application is responding
+                        sh "docker stop ${TEST_CONTAINER_NAME} || true"
+                        sh "docker rm ${TEST_CONTAINER_NAME} || true"
+                        sh "docker run -d --rm -p ${TEST_PORT}:5001 --name ${TEST_CONTAINER_NAME} ${IMAGE_NAME}:latest"
+                        sleep 5
                         def result = sh(script: "curl -f http://localhost:${TEST_PORT}", returnStatus: true)
                         if (result != 0) {
                             error("Test container failed!")
                         }
                     } finally {
-                        sh "sudo docker stop ${TEST_CONTAINER_NAME} || true"
+                        sh "docker stop ${TEST_CONTAINER_NAME} || true"
                     }
-                }
-            }
-        }
-
-        stage('Check and Stop Previous Container') {
-            steps {
-                script {
-                    // Check if the port is in use and kill the process
-                    def portCheck = sh(script: "sudo lsof -t -i:${PROD_PORT} || echo 'free'", returnStdout: true).trim()
-                    if (portCheck != "free" && portCheck) {
-                        echo "⚠️ Port ${PROD_PORT} is in use. Stopping process ${portCheck}..."
-                        sh "sudo kill -9 ${portCheck} || true"
-                    }
-
-                    // Stop and remove the existing container
-                    sh "sudo docker stop ${CONTAINER_NAME} || true"
-                    sh "sudo docker rm ${CONTAINER_NAME} || true"
                 }
             }
         }
 
         stage('Deploy Container') {
             steps {
-                script {
-                    sh """
-                    echo "🚀 Running new container..."
-                    sudo docker run -d -p ${PROD_PORT}:5001 --name ${CONTAINER_NAME} ${IMAGE_NAME}:latest
-                    """
-                }
+                sh """
+                docker stop ${PROD_CONTAINER_NAME} || true
+                docker rm ${PROD_CONTAINER_NAME} || true
+                docker run -d -p 5001:5001 --name ${PROD_CONTAINER_NAME} ${IMAGE_NAME}:latest
+                """
             }
-        }
-    }
-
-    post {
-        success {
-            echo "✅ Application successfully deployed at: http://localhost:${PROD_PORT}"
-        }
-        failure {
-            echo "❌ Build or deployment failed! Check logs for details."
         }
     }
 }
